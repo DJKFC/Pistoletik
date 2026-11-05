@@ -228,7 +228,7 @@ class Game(val ctx: Context) {
                 showBanner("🗿 Тотем спас тебя!")
                 for (i in 0 until enemies.size) {
                     val e = enemies[i]
-                    if (!e.dead && dist2(e.x, e.y, p.x, p.y) < 200f * 200f) damageEnemy(e, 9999f, false)
+                    if (!e.dead && !e.type.boss && dist2(e.x, e.y, p.x, p.y) < 200f * 200f) damageEnemy(e, 9999f, false)
                 }
                 ring(p.x, p.y, 200f, c(0xFFFFE27A))
             } else {
