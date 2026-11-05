@@ -420,7 +420,7 @@ fun Game.drawPause(cv: Canvas) {
     }
     val by = h - 70f * u
     val bw = (w - 48f * u) / 2f
-    button(cv, 16f * u, by, 16f * u + bw, by + 50f * u, "Продолжить", ACCENT) { setState(State.PLAY) }
+    button(cv, 16f * u, by, 16f * u + bw, by + 50f * u, "Продолжить", ACCENT) { goTo(State.PLAY) }
     button(cv, 32f * u + bw, by, w - 16f * u, by + 50f * u, "Сдаться", c(0xFFFF7A6A)) { gameOver() }
 }
 
@@ -439,7 +439,7 @@ fun Game.drawGameOver(cv: Canvas) {
     for (ln in wrap(line, w - 40f * u, 15f * u)) { textC(cv, ln, w / 2f, y, 15f * u, WHITE); y += 20f * u }
     val by = h - 150f * u
     button(cv, 40f * u, by, w - 40f * u, by + 54f * u, "↻  Ещё раз", ACCENT) { startRun() }
-    button(cv, 40f * u, by + 66f * u, w - 40f * u, by + 116f * u, "В меню", c(0xFFB0B4C0)) { setState(State.MENU) }
+    button(cv, 40f * u, by + 66f * u, w - 40f * u, by + 116f * u, "В меню", c(0xFFB0B4C0)) { goTo(State.MENU) }
 }
 
 // ───────────────────────── Ввод ─────────────────────────
@@ -451,7 +451,7 @@ fun Game.touch(ev: MotionEvent) {
     if (state == State.PLAY) {
         when (am) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                if (hypot(x - pauseX(), y - pauseY()) < 26f * u) { setState(State.PAUSE); return }
+                if (hypot(x - pauseX(), y - pauseY()) < 26f * u) { goTo(State.PAUSE); return }
                 if (player.equip != null && hypot(x - equipX(), y - equipY()) < 42f * u) { useEquip(); return }
                 if (joyId == -1) { joyId = pid; joyOx = x; joyOy = y; joyX = x; joyY = y; jx = 0f; jy = 0f }
             }

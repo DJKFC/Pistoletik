@@ -79,16 +79,16 @@ class Game(val ctx: Context) {
         wrapCache.clear()
     }
 
-    fun setState(s: State) { state = s; stateT = 0f; downValid = false; resetJoy() }
+    fun goTo(s: State) { state = s; stateT = 0f; downValid = false; resetJoy() }
     fun resetJoy() { joyId = -1; jx = 0f; jy = 0f }
 
-    fun onPause() { if (state == State.PLAY) setState(State.PAUSE) }
+    fun onPause() { if (state == State.PLAY) goTo(State.PAUSE) }
 
     fun onBack(): Boolean {
         when (state) {
-            State.PLAY -> setState(State.PAUSE)
-            State.PAUSE -> setState(State.PLAY)
-            State.GAMEOVER -> setState(State.MENU)
+            State.PLAY -> goTo(State.PAUSE)
+            State.PAUSE -> goTo(State.PLAY)
+            State.GAMEOVER -> goTo(State.MENU)
             State.MENU -> return false
             else -> {}
         }
@@ -111,7 +111,7 @@ class Game(val ctx: Context) {
         recomputeAll()
         p.hp = p.maxHp
         showBanner("Выживи! Собирай детали для пушки")
-        setState(State.PLAY)
+        goTo(State.PLAY)
     }
 
     fun xpFor(l: Int): Float = 6f + l * 5f + l * l * 0.35f
@@ -249,7 +249,7 @@ class Game(val ctx: Context) {
             .putInt("bestLevel", max(prefs.getInt("bestLevel", 0), player.level))
             .putInt("runs", prefs.getInt("runs", 0) + 1)
             .apply()
-        setState(State.GAMEOVER)
+        goTo(State.GAMEOVER)
     }
 
     fun buildGrid() {
@@ -1172,7 +1172,7 @@ class Game(val ctx: Context) {
     fun openLevelUp() {
         pendingLevels--
         rollChoices()
-        setState(State.LEVELUP)
+        goTo(State.LEVELUP)
     }
 
     fun rollChoices() {
@@ -1190,7 +1190,7 @@ class Game(val ctx: Context) {
         ch.item?.let { giveItem(it) }
         ch.part?.let { pendingParts.add(it) }
         choices.clear()
-        setState(State.PLAY)
+        goTo(State.PLAY)
     }
 
     fun rerollCost() = 10 + rerolls * 5
@@ -1211,7 +1211,7 @@ class Game(val ctx: Context) {
             installPart(np)
             return
         }
-        setState(State.PART)
+        goTo(State.PART)
     }
 
     fun installPart(np: PartDef) {
@@ -1222,11 +1222,11 @@ class Game(val ctx: Context) {
     }
 
     fun resolvePart(install: Boolean) {
-        if (pendingParts.isEmpty()) { setState(State.PLAY); return }
+        if (pendingParts.isEmpty()) { goTo(State.PLAY); return }
         val np = pendingParts.removeAt(0)
         if (install) installPart(np) else player.gold += 6
         if (install) player.gold += 4
-        setState(State.PLAY)
+        goTo(State.PLAY)
     }
 
     // ═══════════════════════════ Отрисовка ═══════════════════════════
