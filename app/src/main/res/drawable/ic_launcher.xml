@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#1F2A22" android:pathData="M18,4h72a14,14 0,0 1,14 14v72a14,14 0,0 1,-14 14h-72a14,14 0,0 1,-14 -14v-72a14,14 0,0 1,14 -14z" />
+    <!-- рукоять -->
+    <path android:fillColor="#3A3A44" android:pathData="M30,52h16l-4,30h-16z" />
+    <!-- магазин -->
+    <path android:fillColor="#FF4A3A" android:pathData="M33,62h9l-2,16h-9z" />
+    <!-- корпус -->
+    <path android:fillColor="#4A4A56" android:pathData="M24,40h40v14h-40z" />
+    <!-- ствол -->
+    <path android:fillColor="#4DFFB0" android:pathData="M62,42h26v9h-26z" />
+    <!-- нитка -->
+    <path android:strokeColor="#B46CFF" android:strokeWidth="2.5" android:pathData="M68,39l3,15M74,39l3,15M80,39l3,15" />
+    <!-- кристалл -->
+    <path android:fillColor="#3FB6FF" android:pathData="M40,26l7,8l-7,8l-7,-8z" />
+    <!-- пуля -->
+    <path android:fillColor="#FFE27A" android:pathData="M95,46.5m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+</vector>
