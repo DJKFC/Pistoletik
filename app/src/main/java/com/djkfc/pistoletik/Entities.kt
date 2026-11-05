@@ -18,7 +18,10 @@ fun withAlpha(color: Int, a: Int): Int = (color and 0x00FFFFFF) or (a.coerceIn(0
 fun fmtTime(t: Float): String { val s = t.toInt(); return "%d:%02d".format(s / 60, s % 60) }
 
 class Gun {
-    val parts = HashMap<Slot, PartDef>()
+    val mods = ArrayList<PartDef>()
+    var bonusSlots = 0
+    var kindIdx = 0
+    var burstKind = ProjKind.NORMAL
     var stats = GunStats()
     var cooldown = 0f
     var spiralAngle = 0f
@@ -60,7 +63,7 @@ class Bullet {
     var dmg = 0f; var size = 5f; var life = 1f; var maxLife = 1f; var t = 0f
     var pierce = 0; var bounce = 0; var homing = 0f
     var shape = Shape.CIRCLE; var color = -1
-    var wave = 0f; var waveOff = 0f
+    var wave = 0f; var waveOff = 0f; var curve = 0f; var mirror = 0
     var explode = 0f; var split = 0; var chain = 0; var burn = 0f; var freeze = 0f
     var pull = 0f; var accel = 0f; var growth = 0f
     var kind = BKind.NORMAL

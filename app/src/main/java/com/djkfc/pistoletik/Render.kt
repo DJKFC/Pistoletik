@@ -305,7 +305,7 @@ fun Game.drawPlayer(cv: Canvas) {
     cv.rotate(ang)
     if (p.aimX < 0f) cv.scale(1f, -1f)
     cv.translate(8f, 3f)
-    drawGun(cv, gun, 1f)
+    drawGun(cv, gun, 1.15f, p.aimX < 0f)
     cv.restore()
     // щит
     if (p.shield > 0f) {
@@ -321,60 +321,48 @@ fun Game.drawPlayer(cv: Canvas) {
     cv.drawCircle(x, y, p.pickup, stroke)
 }
 
-/** Рисует пушку из установленных деталей. k — масштаб. Ствол смотрит вправо. */
-fun Game.drawGun(cv: Canvas, g: Gun, k: Float) {
-    val barrel = g.parts[Slot.BARREL]; val core = g.parts[Slot.CORE]; val bind = g.parts[Slot.BINDING]
-    val mech = g.parts[Slot.MECH]; val ammo = g.parts[Slot.AMMO]
-    val mode = g.stats.mode
-    val bLen = when (barrel?.id) { "b_sniper", "b_rail" -> 22f; "b_sawed" -> 11f; null -> 12f; else -> 16f }
-    // магазин
-    fill.color = ammo?.tint ?: c(0xFF555560)
-    rect.set(-1f * k, 2f * k, 3.5f * k, 10f * k); cv.drawRoundRect(rect, 1f * k, 1f * k, fill)
+val SOCKETS = floatArrayOf(
+    2f, -8f, 12f, -7.5f, 21f, -6.5f, -5f, -8.5f, 10f, 6.5f, 17f, 5f,
+    -8f, 3f, 27f, -1.5f, 6f, -14f, 16f, -13.5f, 26f, -10f, -1f, 14f
+)
+
+/** Рисует пушку и всё, что к ней прикручено. k — масштаб, ствол смотрит вправо. flip — холст отражён по Y. */
+fun Game.drawGun(cv: Canvas, g: Gun, k: Float, flip: Boolean = false) {
+    val counts = IntArray(Origin.values().size)
+    for (pd in g.mods) counts[pd.origin.ordinal]++
+    var dom = -1; var best = 0
+    for (i in counts.indices) if (counts[i] > best) { best = counts[i]; dom = i }
+    val tint = if (dom >= 0) Origin.values()[dom].color else c(0xFF6A6A78)
+    val bLen = 12f + min(g.mods.size, 8) * 1.2f
     // рукоять
     fill.color = c(0xFF34343E)
     path.reset(); path.moveTo(-4f * k, 0f); path.lineTo(1f * k, 0f); path.lineTo(-1f * k, 10f * k); path.lineTo(-6f * k, 10f * k); path.close()
     cv.drawPath(path, fill)
     // корпус
     fill.color = c(0xFF4A4A58)
-    rect.set(-5f * k, -4.5f * k, 8f * k, 2f * k); cv.drawRoundRect(rect, 1.5f * k, 1.5f * k, fill)
+    rect.set(-6f * k, -4.5f * k, 8f * k, 2f * k); cv.drawRoundRect(rect, 1.5f * k, 1.5f * k, fill)
     // ствол
-    fill.color = barrel?.tint ?: c(0xFF6A6A78)
-    if (barrel?.id == "b_sawed") {
-        rect.set(7f * k, -4f * k, (7f + bLen) * k, -1.6f * k); cv.drawRoundRect(rect, 1f * k, 1f * k, fill)
-        rect.set(7f * k, -1.2f * k, (7f + bLen) * k, 1.2f * k); cv.drawRoundRect(rect, 1f * k, 1f * k, fill)
-    } else {
-        rect.set(7f * k, -3.6f * k, (7f + bLen) * k, 0.6f * k); cv.drawRoundRect(rect, 1.2f * k, 1.2f * k, fill)
-    }
-    val tip = (7f + bLen) * k
-    stroke.strokeWidth = 1.2f * k
-    when (mode) {
-        FireMode.BEAM -> { stroke.color = c(0xFFFFFFFF); cv.drawCircle(tip, -1.5f * k, 2.6f * k, stroke); cv.drawCircle(tip - 3f * k, -1.5f * k, 2.2f * k, stroke) }
-        FireMode.NOVA, FireMode.ORBIT -> { stroke.color = barrel?.tint ?: WHITE; cv.drawCircle(tip + 1f * k, -1.5f * k, 3.5f * k, stroke) }
-        FireMode.SPIRAL -> { fill.color = c(0xFFFFE27A); for (i in 0 until 3) cv.drawCircle(tip + 1f * k, -1.5f * k + (i - 1) * 2.5f * k, 1f * k, fill) }
-        FireMode.MINE -> { fill.color = c(0xFF333340); rect.set(tip - 2f * k, -5f * k, tip + 2f * k, 2f * k); cv.drawRect(rect, fill) }
-        else -> {}
-    }
-    // обвязка (нитка/лента/провод)
-    if (bind != null) {
-        stroke.color = bind.tint; stroke.strokeWidth = 1.3f * k
-        for (i in 0 until 3) {
-            val bx = (8.5f + i * 3.2f) * k
-            cv.drawLine(bx, -4.6f * k, bx + 1.6f * k, 1.6f * k, stroke)
-        }
-    }
-    // механизм
-    if (mech != null) {
-        fill.color = mech.tint; cv.drawCircle(2.5f * k, 3.2f * k, 2.2f * k, fill)
-        fill.color = c(0xFF222228); cv.drawCircle(2.5f * k, 3.2f * k, 0.8f * k, fill)
-    }
-    // кристалл
-    if (core != null) {
-        val cx = 1.5f * k; val cy = -7.5f * k; val s = 3.2f * k
-        fill.color = withAlpha(core.tint, 80); cv.drawCircle(cx, cy, s * 1.6f, fill)
-        fill.color = core.tint
-        path.reset(); path.moveTo(cx, cy - s); path.lineTo(cx + s * 0.75f, cy); path.lineTo(cx, cy + s); path.lineTo(cx - s * 0.75f, cy); path.close()
-        cv.drawPath(path, fill)
-        fill.color = withAlpha(WHITE, 150); cv.drawCircle(cx - s * 0.2f, cy - s * 0.3f, s * 0.22f, fill)
+    fill.color = tint
+    rect.set(7f * k, -3.6f * k, (7f + bLen) * k, 0.6f * k); cv.drawRoundRect(rect, 1.2f * k, 1.2f * k, fill)
+    fill.color = withAlpha(WHITE, 50)
+    rect.set(7f * k, -3.6f * k, (7f + bLen) * k, -2.4f * k); cv.drawRect(rect, fill)
+    // спусковая скоба
+    stroke.color = c(0xFF34343E); stroke.strokeWidth = 1f * k
+    cv.drawCircle(2f * k, 3.2f * k, 1.8f * k, stroke)
+    // прикрученные штуки
+    val es = 6.2f * k
+    for ((i, pd) in g.mods.withIndex()) {
+        if (i * 2 + 1 >= SOCKETS.size) break
+        val px = SOCKETS[i * 2] * k; val py = SOCKETS[i * 2 + 1] * k
+        stroke.color = withAlpha(pd.origin.color, 160); stroke.strokeWidth = 0.7f * k
+        cv.drawLine(px, py, clampf(px, -5f * k, (7f + bLen) * k), clampf(py, -4f * k, 1f * k), stroke)
+        fill.color = withAlpha(pd.origin.color, 70); cv.drawCircle(px, py, es * 0.62f, fill)
+        cv.save()
+        cv.translate(px, py)
+        if (flip) cv.scale(1f, -1f)
+        text.textAlign = Paint.Align.CENTER; text.textSize = es; text.color = WHITE
+        cv.drawText(pd.glyph, 0f, es * 0.36f, text)
+        cv.restore()
     }
 }
 
@@ -502,8 +490,8 @@ fun Game.drawPickup(cv: Canvas, k: Pickup) {
             fill.color = withAlpha(col, 60); cv.drawCircle(x, y, 15f + sin(k.t * 4f) * 2.5f, fill)
             fill.color = c(0xFF2A2A34); rect.set(x - 9f, y - 9f, x + 9f, y + 9f); cv.drawRoundRect(rect, 3f, 3f, fill)
             stroke.color = RARITY_COLORS[part.rarity]; stroke.strokeWidth = 1.5f; cv.drawRoundRect(rect, 3f, 3f, stroke)
-            text.textSize = 11f; text.color = WHITE
-            cv.drawText(part.slot.glyph, x, y + 4f, text)
+            text.textSize = 12f; text.color = WHITE
+            cv.drawText(part.glyph, x, y + 4.5f, text)
             // луч над редкой деталью
             if (part.rarity >= 1) {
                 fill.color = withAlpha(RARITY_COLORS[part.rarity], 40)

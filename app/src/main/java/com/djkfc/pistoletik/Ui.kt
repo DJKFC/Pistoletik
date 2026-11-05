@@ -166,7 +166,7 @@ fun Game.drawHud(cv: Canvas) {
 
 // ───────────────────────── Меню ─────────────────────────
 val demoGun = Gun().apply {
-    for (id in listOf("b_warp", "c_void", "t_fate", "m_spring", "a_inc")) Parts.byId[id]?.let { parts[it.slot] = it }
+    for (id in listOf("banana", "void", "sock", "fate", "battery", "chili", "duck")) Parts.byId[id]?.let { mods.add(it) }
 }
 
 fun Game.drawMenu(cv: Canvas) {
@@ -224,7 +224,8 @@ fun Game.drawMenu(cv: Canvas) {
     }
     var hy = by + 108f * u
     val tips = listOf(
-        "🔫 Детали падают с элитных врагов и боссов: ствол, кристалл, обвязка, механизм, патроны",
+        "🔫 К пушке можно прикрутить что угодно: кристалл, носок, банан, фонарик, гирю… Детали падают с элиток и боссов",
+        "🌀 Режимы стрельбы сочетаются: спираль + луч, кольцо мин, очереди бумерангов",
         "✨ 3 детали одного происхождения = бонус комплекта",
         "📦 Сундуки открываются за золото и дают предметы"
     )
@@ -247,13 +248,14 @@ fun Game.partCard(cv: Canvas, part: PartDef, l: Float, t: Float, r: Float, b: Fl
     rect.set(il, it, il + isz, it + isz)
     fill.color = withAlpha(part.origin.color, 60); cv.drawRoundRect(rect, 10f * u, 10f * u, fill)
     stroke.color = part.origin.color; stroke.strokeWidth = 2f * u; cv.drawRoundRect(rect, 10f * u, 10f * u, stroke)
-    textC(cv, part.slot.glyph, il + isz / 2f, it + isz / 2f + isz * 0.18f, isz * 0.5f, WHITE)
+    textC(cv, part.glyph, il + isz / 2f, it + isz / 2f + isz * 0.2f, isz * 0.55f, WHITE)
     val tx = il + isz + 12f * u
     val tw = r - tx - 10f * u
     var y = t + 22f * u
     textL(cv, part.name, tx, y, 16f * u, rc)
     y += 16f * u
-    textL(cv, "${part.slot.title} · ${part.origin.title} · ${RARITY_NAMES[part.rarity]}", tx, y, 10.5f * u, part.origin.color)
+    val have = gun.mods.count { it.id == part.id }
+    textL(cv, "Деталь · ${part.origin.title} · ${RARITY_NAMES[part.rarity]}" + (if (have > 0) " · стоит ×$have" else ""), tx, y, 10.5f * u, part.origin.color)
     y += 17f * u
     for (ln in wrap(part.desc, tw, 12.5f * u)) {
         if (y > b - 6f * u) break
@@ -312,44 +314,52 @@ fun Game.drawLevelUp(cv: Canvas) {
 fun Game.drawPartSwap(cv: Canvas) {
     dim(cv)
     val np = pendingParts.firstOrNull() ?: return
-    val cur = gun.parts[np.slot]
-    textShadowC(cv, "НОВАЯ ДЕТАЛЬ!", w / 2f, 86f * u, 26f * u, ACCENT)
-    textC(cv, "Слот: ${np.slot.glyph} ${np.slot.title}", w / 2f, 110f * u, 14f * u, GREY)
-
-    // превью пушки с новой деталью
-    val preview = Gun()
-    preview.parts.putAll(gun.parts); preview.parts[np.slot] = np
-    cv.save(); cv.translate(w / 2f - 25f * u, 160f * u); drawGun(cv, preview, 4.2f * u); cv.restore()
-
-    val cardH = 108f * u
-    var t = 205f * u
+    textShadowC(cv, "НОВАЯ ДЕТАЛЬ!", w / 2f, 70f * u, 24f * u, ACCENT)
+    textC(cv, "Все гнёзда заняты (${gun.mods.size}/${capacity()}). Что заменить?", w / 2f, 92f * u, 12.5f * u, GREY)
+    val cardH = 96f * u
+    var t = 104f * u
     partCard(cv, np, 16f * u, t, w - 16f * u, t + cardH, true)
-    t += cardH + 8f * u
-    textC(cv, "▼ заменит ▼", w / 2f, t + 14f * u, 12f * u, GREY)
-    t += 24f * u
-    if (cur != null) partCard(cv, cur, 16f * u, t, w - 16f * u, t + cardH, false)
-    t += cardH + 12f * u
-
-    // комплекты
+    t += cardH + 10f * u
+    // комплект после установки
     val counts = IntArray(Origin.values().size)
-    for (pd in preview.parts.values) counts[pd.origin.ordinal]++
+    for (pd in gun.mods) counts[pd.origin.ordinal]++
     val o = np.origin
-    val cnt = counts[o.ordinal]
-    val setText = if (cnt >= 3) "✨ Комплект «${o.title}» ($cnt/5): ${o.setDesc}" + (if (cnt >= 5) " ×2" else "")
+    val cnt = counts[o.ordinal] + 1
+    val setText = if (cnt >= 3) "✨ «${o.title}» ($cnt): ${o.setDesc}" + (if (cnt >= 5) " ×2" else "")
                   else "Комплект «${o.title}»: $cnt/3 — ${o.setDesc}"
-    for (ln in wrap(setText, w - 40f * u, 12f * u)) { textC(cv, ln, w / 2f, t + 12f * u, 12f * u, if (cnt >= 3) o.color else GREY); t += 16f * u }
-    t += 14f * u
-    val bw = (w - 48f * u) / 2f
-    button(cv, 16f * u, t, 16f * u + bw, t + 52f * u, "Установить", c(0xFF6CE46C)) { resolvePart(true) }
-    button(cv, 32f * u + bw, t, w - 16f * u, t + 52f * u, "Разобрать +6💰", c(0xFFB0B4C0)) { resolvePart(false) }
-    if (pendingParts.size > 1) textC(cv, "Ещё деталей в очереди: ${pendingParts.size - 1}", w / 2f, t + 74f * u, 11f * u, GREY)
+    for (ln in wrap(setText, w - 40f * u, 11.5f * u)) { textC(cv, ln, w / 2f, t + 10f * u, 11.5f * u, if (cnt >= 3) o.color else GREY); t += 15f * u }
+    t += 8f * u
+    // список текущих деталей — тапни, чтобы заменить
+    val n = gun.mods.size
+    val bottom = h - 80f * u
+    val rowH = min(46f * u, (bottom - t) / max(1, n) - 4f * u)
+    for ((i, pd) in gun.mods.withIndex()) {
+        val rt = t + i * (rowH + 4f * u)
+        panel(cv, 16f * u, rt, w - 16f * u, rt + rowH, PANEL, RARITY_COLORS[pd.rarity], 1.2f * u)
+        val gs = min(24f * u, rowH * 0.7f)
+        textC(cv, pd.glyph, 36f * u, rt + rowH / 2f + gs * 0.36f, gs, WHITE)
+        textL(cv, pd.name, 58f * u, rt + rowH * 0.42f, min(13f * u, rowH * 0.32f), pd.origin.color)
+        val d = wrap(pd.desc, w - 150f * u, 10f * u).firstOrNull() ?: ""
+        textL(cv, d, 58f * u, rt + rowH * 0.8f, min(10f * u, rowH * 0.26f), c(0xFFB8BCC8))
+        textR(cv, "заменить ↺", w - 26f * u, rt + rowH / 2f + 4f * u, 11f * u, c(0xFF6CE46C))
+        uiButtons.add(Btn(16f * u, rt, w - 16f * u, rt + rowH) { resolvePart(i) })
+    }
+    val by = h - 66f * u
+    button(cv, 40f * u, by, w - 40f * u, by + 50f * u, "Разобрать новую  +6💰", c(0xFFB0B4C0)) { resolvePart(-1) }
 }
 
 fun Game.statsLines(): List<String> {
     val s = gun.stats
-    val l1 = "Урон ${s.damage.toInt()}  ·  ${"%.1f".format(s.fireRate)}/с  ·  Снарядов ${s.count}  ·  ${s.mode.title}"
+    val l1 = "Урон ${s.damage.toInt()}  ·  ${"%.1f".format(s.fireRate)}/с  ·  Снарядов ${s.count}"
     val l2 = "Пробитие ${s.pierce}  ·  Рикошет ${s.bounce}  ·  Крит ${(s.crit * 100).toInt()}% ×${"%.1f".format(s.critMult)}"
     val ex = ArrayList<String>()
+    ex.add(if (s.kinds.isEmpty()) "пули" else s.kinds.joinToString("/") { it.title.lowercase() })
+    if (s.spiral) ex.add("спираль")
+    if (s.nova) ex.add("кольцо")
+    if (s.burstOn) ex.add("очередь ×${s.burst}")
+    if (s.curve != 0f) ex.add("дуга")
+    if (s.mirror > 0) ex.add("отражение ×${s.mirror}")
+    if (s.chaos) ex.add("хаос-урон")
     if (s.homing > 0f) ex.add("наведение")
     if (s.explode > 0f) ex.add("взрыв ${s.explode.toInt()}")
     if (s.split > 0) ex.add("осколки ×${s.split}")
@@ -365,7 +375,7 @@ fun Game.statsLines(): List<String> {
     if (s.leech > 0f) ex.add("вампиризм")
     if (s.execute > 0f) ex.add("добивание")
     val res = arrayListOf(l1, l2)
-    if (ex.isNotEmpty()) res.add("Эффекты: " + ex.joinToString(", "))
+    res.add("Эффекты: " + ex.joinToString(", "))
     return res
 }
 
@@ -375,20 +385,19 @@ fun Game.drawPause(cv: Canvas) {
     // пушка
     panel(cv, 16f * u, 76f * u, w - 16f * u, 156f * u, PANEL, c(0xFF333844))
     cv.save(); cv.translate(w / 2f - 25f * u, 122f * u); drawGun(cv, gun, 3.6f * u); cv.restore()
-    var y = 176f * u
-    for (slot in Slot.values()) {
-        val pd = gun.parts[slot]
-        textL(cv, "${slot.glyph} ${slot.title}:", 20f * u, y, 12f * u, GREY)
-        if (pd != null) {
-            textL(cv, pd.name, 120f * u, y, 13f * u, pd.origin.color)
-            y += 14f * u
-            val ln = wrap(pd.desc, w - 140f * u, 10.5f * u)
-            for (l in ln) { textL(cv, l, 120f * u, y, 10.5f * u, c(0xFFB8BCC8)); y += 13f * u }
-        } else {
-            textL(cv, "— пусто —", 120f * u, y, 12f * u, c(0xFF666A78)); y += 14f * u
-        }
-        y += 6f * u
+    var y = 172f * u
+    textL(cv, "Гнёзда: ${gun.mods.size}/${capacity()}", 20f * u, y, 12f * u, GREY)
+    y += 6f * u
+    val n = gun.mods.size
+    val rowH = if (n > 8) 22f * u else 28f * u
+    for (pd in gun.mods) {
+        y += rowH
+        textL(cv, pd.glyph, 20f * u, y, rowH * 0.6f, WHITE)
+        textL(cv, pd.name, 46f * u, y - rowH * 0.12f, rowH * 0.42f, pd.origin.color)
+        val d = wrap(pd.desc, w - 70f * u, rowH * 0.34f).firstOrNull() ?: ""
+        textL(cv, d, 46f * u, y + rowH * 0.28f, rowH * 0.34f, c(0xFFB8BCC8))
     }
+    y += rowH * 0.6f + 6f * u
     val sets = activeSets()
     for ((o, n) in sets) {
         for (ln in wrap("✨ ${o.title} ($n): ${o.setDesc}" + (if (n >= 5) " ×2" else ""), w - 40f * u, 11.5f * u)) {

@@ -103,7 +103,7 @@ class Game(val ctx: Context) {
         pendingParts.clear(); choices.clear()
         val p = player
         p.maxHpBase = hero.hp; p.speedBase = hero.speed; p.equip = hero.equip; p.color = hero.color
-        for (id in hero.parts) Parts.byId[id]?.let { gun.parts[it.slot] = it }
+        for (id in hero.parts) Parts.byId[id]?.let { gun.mods.add(it) }
         time = 0f; kills = 0; credits = 3f; spawnT = 0f; chestT = 20f; chestsOpened = 0
         nextBoss = 180f; bossIdx = 0; boss = null; swarmT = 75f; camX = 0f; camY = 0f
         pendingLevels = 0; rerolls = 0; chronoT = 0f; novaCounter = 0; newRecord = false
@@ -120,9 +120,9 @@ class Game(val ctx: Context) {
 
     fun recomputeGun() {
         val s = GunStats()
-        for (slot in Slot.values()) gun.parts[slot]?.apply?.invoke(s)
+        for (pd in gun.mods) pd.apply.invoke(s)
         val counts = IntArray(Origin.values().size)
-        for (pd in gun.parts.values) counts[pd.origin.ordinal]++
+        for (pd in gun.mods) counts[pd.origin.ordinal]++
         for (o in Origin.values()) {
             val n = counts[o.ordinal]
             if (n >= 3) applySet(o, s, if (n >= 5) 2 else 1)
@@ -144,7 +144,7 @@ class Game(val ctx: Context) {
 
     fun activeSets(): List<Pair<Origin, Int>> {
         val counts = IntArray(Origin.values().size)
-        for (pd in gun.parts.values) counts[pd.origin.ordinal]++
+        for (pd in gun.mods) counts[pd.origin.ordinal]++
         val res = ArrayList<Pair<Origin, Int>>()
         for (o in Origin.values()) if (counts[o.ordinal] >= 3) res.add(Pair(o, counts[o.ordinal]))
         return res
@@ -361,12 +361,19 @@ class Game(val ctx: Context) {
     }
 
     // ── Пушка
+    fun capacity(): Int = min(12, 4 + gun.bonusSlots + player.n(Item.GLUE))
+
+    private fun kindRate(k: ProjKind): Float = when (k) {
+        ProjKind.NORMAL -> 1f; ProjKind.BEAM -> 0.8f; ProjKind.ORBIT -> 0.6f
+        ProjKind.BOOMERANG -> 0.7f; ProjKind.MINE -> 0.8f
+    }
+
     private fun updateGun(dt: Float) {
         val s = gun.stats; val p = player
         gun.cooldown -= dt
         if (gun.burstLeft > 0) {
             gun.burstTimer -= dt
-            if (gun.burstTimer <= 0f) { fireVolley(gun.burstAngle); gun.burstLeft--; gun.burstTimer = 0.07f }
+            if (gun.burstTimer <= 0f) { fireShot(gun.burstAngle, gun.burstKind); gun.burstLeft--; gun.burstTimer = 0.07f }
         }
         val range = min(s.speed * s.life, 470f).coerceAtLeast(200f)
         val target = nearestEnemy(p.x, p.y, range)
@@ -378,71 +385,70 @@ class Game(val ctx: Context) {
             p.aimX += (p.moveX - p.aimX) * min(1f, dt * 6f); p.aimY += (p.moveY - p.aimY) * min(1f, dt * 6f)
             ang = atan2(p.aimY, p.aimX)
         }
-        val rateMul = when (s.mode) {
-            FireMode.BURST -> 0.45f; FireMode.BEAM -> 0.8f; FireMode.ORBIT -> 0.6f
-            FireMode.BOOMERANG -> 0.7f; FireMode.MINE -> 0.8f; FireMode.SPIRAL -> 1.8f
-            FireMode.NOVA -> 0.35f; FireMode.NORMAL -> 1f
-        }
-        val ambient = s.mode == FireMode.ORBIT || s.mode == FireMode.SPIRAL || s.mode == FireMode.NOVA
+        val kind = if (s.kinds.isEmpty()) ProjKind.NORMAL else s.kinds[gun.kindIdx % s.kinds.size]
+        var rateMul = kindRate(kind)
+        if (s.spiral) rateMul *= 1.8f
+        if (s.nova) rateMul *= 0.35f
+        if (s.burstOn) rateMul *= 0.45f
+        val ambient = kind == ProjKind.ORBIT || s.spiral || s.nova
         val canFire = target != null || (ambient && nearestEnemy(p.x, p.y, 320f) != null)
         if (gun.cooldown <= 0f && canFire) {
             gun.cooldown = 1f / (s.fireRate * rateMul)
-            when (s.mode) {
-                FireMode.SPIRAL -> { gun.spiralAngle += rad(41f); fireVolley(gun.spiralAngle) }
-                FireMode.BURST -> { fireVolley(ang); gun.burstLeft = s.burst - 1; gun.burstTimer = 0.07f; gun.burstAngle = ang }
-                FireMode.NOVA -> {
-                    val n = 6 + s.count * 4
-                    for (i in 0 until n) spawnPlayerBullet(ang + i * TAU / n)
-                }
-                FireMode.BEAM -> fireBeams(ang)
-                else -> fireVolley(ang)
-            }
+            gun.kindIdx++
+            var a = ang
+            if (s.spiral) { gun.spiralAngle += rad(41f); a = gun.spiralAngle }
+            fireShot(a, kind)
+            if (s.burstOn) { gun.burstLeft = s.burst - 1; gun.burstTimer = 0.07f; gun.burstAngle = a; gun.burstKind = kind }
             for (i in 0 until 3) {
-                particles.add(Particle(p.x + cos(ang) * 22f, p.y + sin(ang) * 22f,
-                    cos(ang) * rf(40f, 120f) + rf(-30f, 30f), sin(ang) * rf(40f, 120f) + rf(-30f, 30f),
+                particles.add(Particle(p.x + cos(a) * 22f, p.y + sin(a) * 22f,
+                    cos(a) * rf(40f, 120f) + rf(-30f, 30f), sin(a) * rf(40f, 120f) + rf(-30f, 30f),
                     0.15f, 2.5f, s.color))
             }
         }
     }
 
-    private fun baseDirs(ang: Float, out: FloatArray): Int {
-        val s = gun.stats
-        var n = 0
-        out[n++] = ang
-        if (s.rear) out[n++] = ang + PI_F
-        if (s.sides) { out[n++] = ang + PI_F / 2f; out[n++] = ang - PI_F / 2f }
-        return n
-    }
-
     private val dirBuf = FloatArray(4)
 
-    fun fireVolley(ang: Float) {
+    /** Один «выстрел»: учитывает кольцо, веер снарядов, назад/в стороны. */
+    fun fireShot(ang: Float, kind: ProjKind) {
         val s = gun.stats
-        val nd = baseDirs(ang, dirBuf)
+        if (s.nova) {
+            val n = if (kind == ProjKind.BEAM) 4 + s.count * 2 else 6 + s.count * 4
+            for (i in 0 until n) emit(ang + i * TAU / n, kind)
+            return
+        }
+        var nd = 0
+        dirBuf[nd++] = ang
+        if (s.rear) dirBuf[nd++] = ang + PI_F
+        if (s.sides) { dirBuf[nd++] = ang + PI_F / 2f; dirBuf[nd++] = ang - PI_F / 2f }
         val n = s.count
         val fan = rad(min(10f * (n - 1) + (if (n > 1) s.spread else 0f), 150f))
-        val jitter = rad(s.spread * 0.5f)
+        val jitter = if (kind == ProjKind.BEAM) 0f else rad(s.spread * 0.5f)
         for (d in 0 until nd) {
             val base = dirBuf[d]
             for (i in 0 until n) {
                 val off = if (n > 1) -fan / 2f + fan * i / (n - 1) else 0f
-                spawnPlayerBullet(base + off + rf(-jitter, jitter))
+                emit(base + off + rf(-jitter, jitter), kind)
             }
         }
     }
 
-    fun spawnPlayerBullet(a: Float) {
+    fun emit(a: Float, kind: ProjKind) {
+        if (kind == ProjKind.BEAM) fireBeam(a) else spawnPlayerBullet(a, kind)
+    }
+
+    fun spawnPlayerBullet(a: Float, kind: ProjKind) {
         val s = gun.stats; val p = player
         val b = Bullet()
         b.x = p.x + cos(a) * 16f; b.y = p.y + sin(a) * 16f
         b.vx = cos(a) * s.speed; b.vy = sin(a) * s.speed; b.speed0 = s.speed
         b.dmg = s.damage; b.size = s.size; b.life = s.life; b.maxLife = s.life
         b.pierce = s.pierce; b.bounce = s.bounce; b.homing = s.homing
-        b.shape = s.shape; b.color = s.color; b.wave = s.wave
+        b.shape = s.shape; b.color = s.color; b.wave = s.wave; b.curve = s.curve; b.mirror = s.mirror
         b.explode = s.explode; b.split = s.split; b.chain = s.chain; b.burn = s.burn
         b.freeze = s.freeze; b.pull = s.pull; b.accel = s.accel; b.growth = s.growth
-        when (s.mode) {
-            FireMode.ORBIT -> {
+        when (kind) {
+            ProjKind.ORBIT -> {
                 var cnt = 0
                 for (i in 0 until bullets.size) if (bullets[i].kind == BKind.ORBIT && !bullets[i].dead) cnt++
                 if (cnt >= 4 + s.count * 4) return
@@ -450,49 +456,41 @@ class Game(val ctx: Context) {
                 b.orbitA = a; b.orbitR = 14f; b.orbitMax = rf(38f, 80f)
                 b.life = s.life * 3.5f; b.maxLife = b.life
             }
-            FireMode.BOOMERANG -> { b.kind = BKind.BOOMERANG; b.multiHit = true; b.life = s.life * 1.8f; b.maxLife = b.life }
-            FireMode.MINE -> {
+            ProjKind.BOOMERANG -> { b.kind = BKind.BOOMERANG; b.multiHit = true; b.life = s.life * 1.8f; b.maxLife = b.life }
+            ProjKind.MINE -> {
                 b.kind = BKind.MINE; b.vx *= 0.6f; b.vy *= 0.6f; b.life = s.life * 5f; b.maxLife = b.life
-                b.explode = max(b.explode, 45f); b.homing = 0f; b.wave = 0f
+                b.explode = max(b.explode, 45f); b.homing = 0f; b.wave = 0f; b.curve = 0f
             }
             else -> {}
         }
         bullets.add(b)
     }
 
-    fun fireBeams(ang: Float) {
+    fun fireBeam(a: Float) {
         val s = gun.stats; val p = player
-        val nd = baseDirs(ang, dirBuf)
-        val n = s.count
-        val fan = rad(min(12f * (n - 1), 120f))
         val len = min(s.speed * s.life, 520f) * (1f + s.pierce * 0.05f)
-        for (d in 0 until nd) for (i in 0 until n) {
-            val a = dirBuf[d] + (if (n > 1) -fan / 2f + fan * i / (n - 1) else 0f)
-            val dx = cos(a); val dy = sin(a)
-            val sx = p.x + dx * 16f; val sy = p.y + dy * 16f
-            val ex = sx + dx * len; val ey = sy + dy * len
-            beams.add(Beam(sx, sy, ex, ey, 0.12f, s.color, s.size * 1.1f, false))
-            // проверка врагов вдоль луча
-            val hits = ArrayList<Enemy>()
-            val steps = (len / 40f).toInt() + 1
-            for (k in 0..steps) {
-                val cx = sx + dx * len * k / steps; val cy = sy + dy * len * k / steps
-                forNear(cx, cy, 45f) { e ->
-                    if (!e.dead && !hits.contains(e)) {
-                        // расстояние до отрезка
-                        val t = clampf(((e.x - sx) * dx + (e.y - sy) * dy), 0f, len)
-                        val px = sx + dx * t; val py = sy + dy * t
-                        val rr = e.r + s.size
-                        if (dist2(px, py, e.x, e.y) < rr * rr) hits.add(e)
-                    }
+        val dx = cos(a); val dy = sin(a)
+        val sx = p.x + dx * 16f; val sy = p.y + dy * 16f
+        val ex = sx + dx * len; val ey = sy + dy * len
+        beams.add(Beam(sx, sy, ex, ey, 0.12f, s.color, s.size * 1.1f, false))
+        val hits = ArrayList<Enemy>()
+        val steps = (len / 40f).toInt() + 1
+        for (k in 0..steps) {
+            val cx = sx + dx * len * k / steps; val cy = sy + dy * len * k / steps
+            forNear(cx, cy, 45f) { e ->
+                if (!e.dead && !hits.contains(e)) {
+                    val t = clampf(((e.x - sx) * dx + (e.y - sy) * dy), 0f, len)
+                    val px = sx + dx * t; val py = sy + dy * t
+                    val rr = e.r + s.size
+                    if (dist2(px, py, e.x, e.y) < rr * rr) hits.add(e)
                 }
             }
-            val fake = Bullet()
-            fake.dmg = s.damage; fake.size = s.size; fake.burn = s.burn; fake.freeze = s.freeze
-            fake.explode = s.explode; fake.chain = s.chain; fake.split = 0; fake.multiHit = true
-            fake.vx = dx * 300f; fake.vy = dy * 300f; fake.color = s.color
-            for (e in hits) { fake.x = e.x; fake.y = e.y; hitEnemy(fake, e) }
         }
+        val fake = Bullet()
+        fake.dmg = s.damage; fake.size = s.size; fake.burn = s.burn; fake.freeze = s.freeze
+        fake.explode = s.explode; fake.chain = s.chain; fake.split = 0; fake.multiHit = true
+        fake.vx = dx * 300f; fake.vy = dy * 300f; fake.color = s.color
+        for (e in hits) { fake.x = e.x; fake.y = e.y; hitEnemy(fake, e) }
     }
 
     // ── Дроны
@@ -700,7 +698,16 @@ class Game(val ctx: Context) {
                         val ns = min(sp + b.accel * dt, 2000f)
                         b.vx *= ns / sp; b.vy *= ns / sp
                     }
+                    if (b.curve != 0f) {
+                        val ca = cos(b.curve * dt); val sa = sin(b.curve * dt)
+                        val nvx = b.vx * ca - b.vy * sa; b.vy = b.vx * sa + b.vy * ca; b.vx = nvx
+                    }
                     b.x += b.vx * dt; b.y += b.vy * dt
+                    if (b.mirror > 0) {
+                        val hw = w / 2f / zoom; val hh = h / 2f / zoom
+                        if ((b.x < camX - hw && b.vx < 0f) || (b.x > camX + hw && b.vx > 0f)) { b.vx = -b.vx; b.mirror--; b.life = max(b.life, 0.6f) }
+                        else if ((b.y < camY - hh && b.vy < 0f) || (b.y > camY + hh && b.vy > 0f)) { b.vy = -b.vy; b.mirror--; b.life = max(b.life, 0.6f) }
+                    }
                     if (b.wave > 0f) {
                         val sp = hypot(b.vx, b.vy) + 0.01f
                         val px = -b.vy / sp; val py = b.vx / sp
@@ -767,6 +774,7 @@ class Game(val ctx: Context) {
         var dmg = b.dmg
         val crit = chance(s.crit)
         if (crit) dmg *= s.critMult
+        if (s.chaos && b.kind != BKind.DRONE) dmg *= rf(0.2f, 3f)
         val cb = p.n(Item.CROWBAR)
         if (cb > 0 && e.hp >= e.maxHp * 0.9f) dmg *= 1f + 0.5f * cb
         b.mark(e.id, if (b.multiHit) 0.45f else 99f)
@@ -934,7 +942,8 @@ class Game(val ctx: Context) {
             }
             pickups.add(Pickup(PKind.GOLD, e.x, e.y, 30))
             if (boss === e) boss = null
-            showBanner("🏆 ${e.type.title} повержен!")
+            gun.bonusSlots++
+            showBanner("🏆 ${e.type.title} повержен! +1 гнездо на пушке")
             shake = 10f
         }
         val fang = p.n(Item.FANG); if (fang > 0) heal(2f * fang)
@@ -1204,28 +1213,26 @@ class Game(val ctx: Context) {
 
     // ── Замена детали
     fun openPartSwap() {
-        val np = pendingParts[0]
-        val cur = gun.parts[np.slot]
-        if (cur == null) {
-            pendingParts.removeAt(0)
-            installPart(np)
+        if (gun.mods.size < capacity()) {
+            installPart(pendingParts.removeAt(0), -1)
             return
         }
         goTo(State.PART)
     }
 
-    fun installPart(np: PartDef) {
-        gun.parts[np.slot] = np
+    /** replace = индекс заменяемой детали, -1 — в свободное гнездо */
+    fun installPart(np: PartDef, replace: Int) {
+        if (replace in gun.mods.indices) gun.mods[replace] = np else gun.mods.add(np)
         recomputeAll()
-        showBanner("${np.slot.glyph} Установлено: ${np.name}")
+        showBanner("${np.glyph} Прикручено: ${np.name}")
         ring(player.x, player.y, 40f, np.origin.color)
     }
 
-    fun resolvePart(install: Boolean) {
+    /** idx >= 0 — заменить эту деталь, -1 — разобрать новую на золото */
+    fun resolvePart(idx: Int) {
         if (pendingParts.isEmpty()) { goTo(State.PLAY); return }
         val np = pendingParts.removeAt(0)
-        if (install) installPart(np) else player.gold += 6
-        if (install) player.gold += 4
+        if (idx >= 0) { installPart(np, idx); player.gold += 4 } else player.gold += 6
         goTo(State.PLAY)
     }
 

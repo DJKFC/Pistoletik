@@ -13,23 +13,15 @@ enum class Origin(val title: String, val color: Int, val setDesc: String) {
     CYBER("Кибер", c(0xFF3FB6FF), "+2 цепные молнии, +1 снаряд");
 }
 
-enum class Slot(val title: String, val glyph: String) {
-    BARREL("Ствол", "🔫"),
-    CORE("Кристалл", "💎"),
-    BINDING("Обвязка", "🧵"),
-    MECH("Механизм", "⚙️"),
-    AMMO("Патроны", "🔸");
-}
-
-enum class FireMode(val title: String) {
-    NORMAL("Обычный"), BURST("Очередь"), BEAM("Луч"), ORBIT("Орбита"),
-    BOOMERANG("Бумеранг"), MINE("Мины"), SPIRAL("Спираль"), NOVA("Кольцо");
+/** Чем стреляет пушка. Если вставлено несколько — чередуются по выстрелам. */
+enum class ProjKind(val title: String) {
+    NORMAL("Пули"), BEAM("Луч"), ORBIT("Орбита"), BOOMERANG("Бумеранг"), MINE("Мины");
 }
 
 enum class Shape { CIRCLE, NEEDLE, STAR, DIAMOND, RING, TRIANGLE, SQUARE }
 
 val RARITY_COLORS = intArrayOf(c(0xFFE8E8E8), c(0xFF6CE46C), c(0xFFFF5A4A))
-val RARITY_NAMES = arrayOf("Обычный", "Редкий", "Легендарный")
+val RARITY_NAMES = arrayOf("Обычная", "Редкая", "Легендарная")
 
 // ───────────────────────── Характеристики пушки ─────────────────────────
 class GunStats {
@@ -46,10 +38,17 @@ class GunStats {
     var knock = 50f
     var crit = 0.05f
     var critMult = 2f
-    var mode = FireMode.NORMAL
+    val kinds = ArrayList<ProjKind>()
+    var spiral = false
+    var nova = false
+    var burstOn = false
+    var burst = 3
     var shape = Shape.CIRCLE
     var color = c(0xFFFFE27A)
     var wave = 0f
+    var curve = 0f
+    var mirror = 0
+    var chaos = false
     var explode = 0f
     var split = 0
     var chain = 0
@@ -60,150 +59,186 @@ class GunStats {
     var sides = false
     var accel = 0f
     var growth = 0f
-    var burst = 3
     var leech = 0f
     var execute = 0f
     var hpMul = 1f
+
+    fun addKind(k: ProjKind) { if (!kinds.contains(k)) kinds.add(k) }
 }
 
+/** Любая штука, которую можно прикрутить к пушке. */
 class PartDef(
     val id: String,
     val name: String,
-    val slot: Slot,
+    val glyph: String,
     val origin: Origin,
     val rarity: Int,
     val desc: String,
-    val tint: Int = origin.color,
     val apply: GunStats.() -> Unit
 )
 
 object Parts {
     val all: List<PartDef> = listOf(
-        // ── Стволы: меняют логику стрельбы
-        PartDef("b_short", "Короткий ствол", Slot.BARREL, Origin.COMMON, 0, "+20% скорострельность, точнее") {
+        // ── меняют логику стрельбы
+        PartDef("saw", "Подпиленный ствол", "🪚", Origin.COMMON, 0, "+20% скорострельность, точнее") {
             fireRate *= 1.2f; spread -= 2f
         },
-        PartDef("b_sawed", "Обрез", Slot.BARREL, Origin.COMMON, 1, "Дробовик: +4 дробинки, широкий разброс, малая дальность") {
+        PartDef("sawed", "Обрез", "🔫", Origin.COMMON, 1, "Дробовик: +4 дробинки, широкий разброс, малая дальность") {
             count += 4; spread += 26f; life *= 0.5f; damage *= 0.65f; fireRate *= 0.75f; knock += 60f
         },
-        PartDef("b_sniper", "Снайперский ствол", Slot.BARREL, Origin.COMMON, 1, "×2.2 урон, +2 пробития, пули-иглы, стреляет реже") {
+        PartDef("scope", "Оптический прицел", "🔭", Origin.COMMON, 1, "×2.2 урон, +2 пробития, пули-иглы, стреляет реже") {
             damage *= 2.2f; fireRate *= 0.5f; speed *= 1.6f; life *= 1.3f; pierce += 2; shape = Shape.NEEDLE
         },
-        PartDef("b_spiral", "Жезл спирали", Slot.BARREL, Origin.MAGIC, 1, "Стреляет вращающейся спиралью во все стороны, +1 снаряд") {
-            mode = FireMode.SPIRAL; count += 1
+        PartDef("top", "Юла", "🌀", Origin.MAGIC, 1, "Стреляет вращающейся спиралью во все стороны, +1 снаряд") {
+            spiral = true; count += 1
         },
-        PartDef("b_nova", "Кольцевое дуло", Slot.BARREL, Origin.MAGIC, 1, "Выпускает кольцо пуль во все стороны") {
-            mode = FireMode.NOVA; damage *= 1.1f
+        PartDef("wheel", "Колесо обозрения", "🎡", Origin.MAGIC, 1, "Каждый выстрел — кольцо во все стороны") {
+            nova = true; damage *= 1.1f
         },
-        PartDef("b_boomer", "Дуло-бумеранг", Slot.BARREL, Origin.MAGIC, 0, "Пули возвращаются к тебе и бьют повторно") {
-            mode = FireMode.BOOMERANG; size += 2f
+        PartDef("yoyo", "Йо-йо", "🪀", Origin.MAGIC, 0, "Снаряды возвращаются к тебе и бьют повторно") {
+            addKind(ProjKind.BOOMERANG); size += 2f
         },
-        PartDef("b_beam", "Излучатель", Slot.BARREL, Origin.ALIEN, 1, "Мгновенный луч, пронзающий всех на линии") {
-            mode = FireMode.BEAM; damage *= 0.8f
+        PartDef("torch", "Фонарик", "🔦", Origin.ALIEN, 1, "Мгновенный луч, пронзающий всех на линии") {
+            addKind(ProjKind.BEAM); damage *= 0.8f
         },
-        PartDef("b_warp", "Деформатор", Slot.BARREL, Origin.ALIEN, 0, "Пули летят волной, +15% урон") {
-            wave += 1f; size += 1.5f; damage *= 1.15f
+        PartDef("sat", "Спутник", "🛰️", Origin.ALIEN, 2, "Снаряды кружат вокруг тебя живым щитом") {
+            addKind(ProjKind.ORBIT); damage *= 1.3f
         },
-        PartDef("b_orbit", "Гравитационное кольцо", Slot.BARREL, Origin.ALIEN, 2, "Пули кружат вокруг тебя живым щитом") {
-            mode = FireMode.ORBIT; damage *= 1.3f
+        PartDef("trap", "Мышеловка", "🪤", Origin.CYBER, 1, "Раскидывает мины, взрывающиеся от касания") {
+            addKind(ProjKind.MINE); explode += 50f; damage *= 1.6f
         },
-        PartDef("b_maw", "Адская пасть", Slot.BARREL, Origin.DEMON, 1, "Очередь из 4 выстрелов, поджигает") {
-            mode = FireMode.BURST; burst = 4; burn += 4f; damage *= 1.1f
+        PartDef("maw", "Адская пасть", "👹", Origin.DEMON, 1, "Стреляет очередями по 4, поджигает") {
+            burstOn = true; burst = max(burst, 4); burn += 4f; damage *= 1.1f
         },
-        PartDef("b_rail", "Рельсотрон", Slot.BARREL, Origin.CYBER, 2, "Сверхбыстрые иглы, +5 пробитий, +40% урон") {
+        PartDef("rail", "Рельсотрон", "⚡", Origin.CYBER, 2, "Сверхбыстрые иглы, +5 пробитий, +40% урон") {
             speed *= 2.4f; pierce += 5; damage *= 1.4f; fireRate *= 0.65f; shape = Shape.NEEDLE
         },
-        PartDef("b_mortar", "Минный раструб", Slot.BARREL, Origin.CYBER, 1, "Раскидывает мины, взрывающиеся от касания") {
-            mode = FireMode.MINE; explode += 50f; damage *= 1.6f
+        PartDef("warp", "Деформатор", "〰️", Origin.ALIEN, 0, "Пули летят волной, +15% урон") {
+            wave += 1f; size += 1.5f; damage *= 1.15f
+        },
+        PartDef("banana", "Банан", "🍌", Origin.COMMON, 0, "Пули летят по дуге, +10% урон") {
+            curve += 2.4f; damage *= 1.1f; life *= 1.2f
+        },
+        PartDef("mirror", "Зеркальце", "🪞", Origin.MAGIC, 1, "Пули отражаются от краёв экрана 2 раза") {
+            mirror += 2; life *= 1.5f
+        },
+        PartDef("soap", "Мыло", "🧼", Origin.COMMON, 0, "Стреляет пузырями: медленные, огромные, +3 пробития") {
+            speed *= 0.45f; size += 5f; life *= 1.8f; pierce += 3; shape = Shape.RING; color = c(0xFFBFE8FF)
+        },
+        PartDef("hive", "Улей", "🐝", Origin.COMMON, 2, "Пули — пчёлы: +2 снаряда, наведение, жужжат волной") {
+            count += 2; homing += 2.5f; wave += 0.5f; damage *= 0.6f; color = c(0xFFFFD23A)
+        },
+        PartDef("dice", "Игральный кубик", "🎲", Origin.MAGIC, 1, "Урон каждого попадания случаен: от ×0.2 до ×3") {
+            chaos = true; damage *= 1.1f
         },
 
-        // ── Кристаллы: стихии и форма пуль
-        PartDef("c_glass", "Стекляшка", Slot.CORE, Origin.COMMON, 0, "+10% шанс крита", c(0xFFDDEEFF)) {
-            crit += 0.1f
-        },
-        PartDef("c_amethyst", "Аметист", Slot.CORE, Origin.MAGIC, 1, "Пули-звёзды самонаводятся", c(0xFFC77DFF)) {
+        // ── кристаллы и стихии
+        PartDef("glass", "Стекляшка", "🔹", Origin.COMMON, 0, "+10% шанс крита") { crit += 0.1f },
+        PartDef("amethyst", "Аметист", "🔮", Origin.MAGIC, 1, "Пули-звёзды самонаводятся") {
             homing += 3.5f; shape = Shape.STAR; color = c(0xFFD9A0FF)
         },
-        PartDef("c_moon", "Лунный камень", Slot.CORE, Origin.MAGIC, 1, "Пуля раскалывается на 3 осколка", c(0xFFE6F0FF)) {
+        PartDef("moon", "Лунный камень", "🌙", Origin.MAGIC, 1, "Пуля раскалывается на 3 осколка") {
             split += 3; color = c(0xFFE6F0FF)
         },
-        PartDef("c_ice", "Ледяной сапфир", Slot.CORE, Origin.MAGIC, 0, "Замедляет врагов на 40%, пули-ромбы", c(0xFF7FE8FF)) {
+        PartDef("ice", "Ледяной сапфир", "💎", Origin.MAGIC, 0, "Замедляет врагов на 40%, пули-ромбы") {
             freeze = max(freeze, 0.4f); shape = Shape.DIAMOND; color = c(0xFF9FF0FF)
         },
-        PartDef("c_void", "Кристалл пустоты", Slot.CORE, Origin.ALIEN, 2, "Пули-кольца затягивают врагов в себя", c(0xFF33FFC8)) {
+        PartDef("void", "Осколок пустоты", "🕳️", Origin.ALIEN, 2, "Пули-кольца затягивают врагов в себя") {
             pull += 70f; shape = Shape.RING; color = c(0xFF55FFD0); size += 2f
         },
-        PartDef("c_spore", "Споровый кристалл", Slot.CORE, Origin.ALIEN, 0, "Пули растут в полёте и бьют сильнее", c(0xFF9CFF4D)) {
+        PartDef("spore", "Гриб-спора", "🍄", Origin.ALIEN, 0, "Пули растут в полёте и бьют сильнее") {
             growth += 1.3f; color = c(0xFFB8FF6A)
         },
-        PartDef("c_ruby", "Кровавый рубин", Slot.CORE, Origin.DEMON, 1, "Поджигает и лечит, пули-клыки", c(0xFFFF3355)) {
+        PartDef("ruby", "Кровавый рубин", "♦️", Origin.DEMON, 1, "Поджигает и лечит, пули-клыки") {
             burn += 5f; leech += 0.3f; shape = Shape.TRIANGLE; color = c(0xFFFF4060)
         },
-        PartDef("c_energy", "Энергоядро", Slot.CORE, Origin.CYBER, 1, "Попадание бьёт цепной молнией (2 прыжка)", c(0xFF5AC8FF)) {
+        PartDef("battery", "Батарейка", "🔋", Origin.CYBER, 1, "Попадание бьёт цепной молнией (2 прыжка)") {
             chain += 2; color = c(0xFF7FD4FF)
         },
+        PartDef("meteor", "Кусок метеорита", "☄️", Origin.ALIEN, 1, "Огромные раскалённые сгустки, +40% урон") {
+            size += 4f; damage *= 1.4f; speed *= 0.8f; color = c(0xFFFFA060); explode += 15f
+        },
 
-        // ── Обвязки: нитки, ленты, провода
-        PartDef("t_tape", "Изолента", Slot.BINDING, Origin.COMMON, 0, "+10% урон и +10% скорострельность", c(0xFF4A6CFF)) {
+        // ── обмотки и прочая привязанная ерунда
+        PartDef("tape", "Изолента", "🩹", Origin.COMMON, 0, "+10% урон и +10% скорострельность") {
             damage *= 1.1f; fireRate *= 1.1f
         },
-        PartDef("t_rubber", "Резинка", Slot.BINDING, Origin.COMMON, 0, "Пули отскакивают ещё на 2 врага", c(0xFFFFB0C0)) {
-            bounce += 2
-        },
-        PartDef("t_fate", "Нить судьбы", Slot.BINDING, Origin.MAGIC, 1, "+15% шанс крита, +50% крит-урон") {
+        PartDef("rubber", "Резинка", "➰", Origin.COMMON, 0, "Пули отскакивают ещё на 2 врага") { bounce += 2 },
+        PartDef("fate", "Нить судьбы", "🧵", Origin.MAGIC, 1, "+15% шанс крита, +50% крит-урон") {
             crit += 0.15f; critMult += 0.5f
         },
-        PartDef("t_web", "Паутина", Slot.BINDING, Origin.MAGIC, 0, "Замедляет на 25%, пули крупнее", c(0xFFEFEFEF)) {
+        PartDef("web", "Паутина", "🕸️", Origin.MAGIC, 0, "Замедляет на 25%, пули крупнее") {
             freeze = max(freeze, 0.25f); size += 2.5f
         },
-        PartDef("t_tentacle", "Щупальце", Slot.BINDING, Origin.ALIEN, 1, "Лёгкое наведение, +1 пробитие") {
+        PartDef("squid", "Щупальце", "🦑", Origin.ALIEN, 1, "Лёгкое наведение, +1 пробитие") {
             homing += 1.8f; pierce += 1
         },
-        PartDef("t_barbed", "Колючая проволока", Slot.BINDING, Origin.DEMON, 1, "+25% урон, добивает врагов ниже 12% ХП") {
+        PartDef("cactus", "Кактус", "🌵", Origin.DEMON, 1, "+25% урон, добивает врагов ниже 12% ХП") {
             damage *= 1.25f; execute = max(execute, 0.12f); knock += 30f
         },
-        PartDef("t_wire", "Медный провод", Slot.BINDING, Origin.CYBER, 0, "+1 цепная молния, +15% скорострельность", c(0xFFFF9E40)) {
+        PartDef("wire", "Медный провод", "🔌", Origin.CYBER, 0, "+1 цепная молния, +15% скорострельность") {
             chain += 1; fireRate *= 1.15f
         },
+        PartDef("sock", "Вонючий носок", "🧦", Origin.COMMON, 0, "Пули отравляют (урон со временем)") {
+            burn += 5f; color = c(0xFF9CFF4D)
+        },
+        PartDef("duck", "Резиновая уточка", "🦆", Origin.COMMON, 1, "Всё прыгает: +3 рикошета и отскок от краёв") {
+            bounce += 3; mirror += 1; size += 1f
+        },
 
-        // ── Механизмы
-        PartDef("m_spring", "Пружина", Slot.MECH, Origin.COMMON, 0, "+35% скорострельность") {
-            fireRate *= 1.35f
-        },
-        PartDef("m_rear", "Задний спуск", Slot.MECH, Origin.COMMON, 0, "Дополнительно стреляет назад") {
-            rear = true
-        },
-        PartDef("m_servo", "Сервопривод", Slot.MECH, Origin.CYBER, 1, "Стреляет ещё и в стороны") {
+        // ── механизмы
+        PartDef("spring", "Пружина", "⏩", Origin.COMMON, 0, "+35% скорострельность") { fireRate *= 1.35f },
+        PartDef("rear", "Задний спуск", "🔙", Origin.COMMON, 0, "Дополнительно стреляет назад") { rear = true },
+        PartDef("servo", "Механическая рука", "🦾", Origin.CYBER, 1, "Стреляет ещё и в стороны") {
             sides = true; fireRate *= 1.1f
         },
-        PartDef("m_grav", "Гравидвигатель", Slot.MECH, Origin.ALIEN, 1, "Пули разгоняются в полёте, +20% урон") {
+        PartDef("grav", "Гравидвигатель", "🌠", Origin.ALIEN, 1, "Пули разгоняются в полёте, +20% урон") {
             accel += 700f; damage *= 1.2f; life *= 1.2f
         },
-        PartDef("m_heart", "Сердце демона", Slot.MECH, Origin.DEMON, 2, "+70% скорострельность, но −25% макс. ХП") {
+        PartDef("heart", "Сердце демона", "🫀", Origin.DEMON, 2, "+70% скорострельность, но −25% макс. ХП") {
             fireRate *= 1.7f; hpMul *= 0.75f
         },
-        PartDef("m_clock", "Часовой механизм", Slot.MECH, Origin.MAGIC, 0, "Пули летят на 60% дальше и крупнее") {
+        PartDef("clock", "Часовой механизм", "⏱️", Origin.MAGIC, 0, "Пули летят на 60% дальше и крупнее") {
             life *= 1.6f; size += 2f
         },
+        PartDef("flash", "Флешка", "💾", Origin.CYBER, 0, "+25% скорострельность") { fireRate *= 1.25f },
+        PartDef("chip", "Микросхема", "💽", Origin.CYBER, 1, "+1 молния, лёгкое наведение, +5% крит") {
+            chain += 1; homing += 1f; crit += 0.05f
+        },
+        PartDef("fan", "Вентилятор", "🌬️", Origin.COMMON, 0, "Сильно отбрасывает и слегка замедляет") {
+            knock += 150f; freeze = max(freeze, 0.15f)
+        },
 
-        // ── Патроны
-        PartDef("a_exp", "Экспансивные", Slot.AMMO, Origin.COMMON, 0, "+30% урон") {
-            damage *= 1.3f; size += 1f
+        // ── боеприпасы и всякое тяжёлое
+        PartDef("exp", "Экспансивные пули", "🔸", Origin.COMMON, 0, "+30% урон") { damage *= 1.3f; size += 1f },
+        PartDef("nail", "Гвоздь", "📌", Origin.COMMON, 0, "+2 пробития, пули-иглы") { pierce += 2; shape = Shape.NEEDLE },
+        PartDef("fish", "Рыбья кость", "🐟", Origin.COMMON, 0, "+1 пробитие, пули быстрее") {
+            pierce += 1; speed *= 1.25f; shape = Shape.NEEDLE
         },
-        PartDef("a_ap", "Бронебойные", Slot.AMMO, Origin.COMMON, 0, "+2 пробития") {
-            pierce += 2
+        PartDef("chili", "Перец чили", "🌶️", Origin.DEMON, 0, "Поджигает и слегка взрывается") {
+            burn += 6f; explode += 18f; color = c(0xFFFF6A30)
         },
-        PartDef("a_inc", "Зажигательные", Slot.AMMO, Origin.DEMON, 0, "Поджигают и слегка взрываются") {
-            burn += 5f; explode += 22f
-        },
-        PartDef("a_frag", "Разрывные", Slot.AMMO, Origin.CYBER, 1, "Взрыв при каждом попадании") {
+        PartDef("popper", "Хлопушка", "🎉", Origin.CYBER, 1, "Взрыв при каждом попадании") {
             explode += 45f; damage *= 0.9f
         },
-        PartDef("a_plasma", "Плазменные", Slot.AMMO, Origin.ALIEN, 1, "Огромные сгустки плазмы, +40% урон") {
-            size += 4f; damage *= 1.4f; speed *= 0.8f; color = c(0xFF6AFFE0)
-        },
-        PartDef("a_twin", "Двоящиеся", Slot.AMMO, Origin.MAGIC, 1, "+1 снаряд и +2 осколка") {
+        PartDef("popcorn", "Попкорн", "🍿", Origin.MAGIC, 1, "+1 снаряд, пули лопаются на 2 осколка") {
             count += 1; split += 2
+        },
+        PartDef("weight", "Гиря", "🏋️", Origin.COMMON, 1, "×1.8 урон, огромная отдача по врагам, но пули медленные") {
+            damage *= 1.8f; speed *= 0.6f; knock += 100f; size += 3f; fireRate *= 0.85f
+        },
+        PartDef("feather", "Перо", "🪶", Origin.COMMON, 0, "Пули лёгкие: +50% скорость полёта, +20% скорострельность, −15% урон") {
+            speed *= 1.5f; fireRate *= 1.2f; damage *= 0.85f
+        },
+        PartDef("eye", "Глаз", "👁️", Origin.ALIEN, 1, "Сильное наведение, +5% крит") { homing += 3f; crit += 0.05f },
+        PartDef("skull", "Череп", "💀", Origin.DEMON, 1, "+15% урон, добивает врагов ниже 15% ХП") {
+            damage *= 1.15f; execute = max(execute, 0.15f)
+        },
+        PartDef("candle", "Свечка", "🕯️", Origin.MAGIC, 0, "Поджигает, пули летят дальше") { burn += 3f; life *= 1.3f },
+        PartDef("loupe", "Лупа", "🔍", Origin.COMMON, 0, "Пули крупнее, +20% урон") { size += 4f; damage *= 1.2f },
+        PartDef("coin", "Счастливая монетка", "🪙", Origin.COMMON, 0, "+12% шанс крита") { crit += 0.12f },
+        PartDef("dragon", "Зуб дракона", "🐉", Origin.DEMON, 1, "+20% урон, поджигает, маленький взрыв") {
+            damage *= 1.2f; burn += 5f; explode += 15f
         },
     )
     val byId: Map<String, PartDef> = all.associateBy { it.id }
@@ -241,12 +276,13 @@ enum class Item(val title: String, val rarity: Int, val desc: String, val glyph:
     SHIELD("Генератор щита", 1, "Щит 15% ХП, восстанавливается", "🔰"),
     DOUBLE("Второй ствол", 1, "+1 снаряд", "➕"),
     DRONE("Дрон-помощник", 1, "Дрон летает рядом и стреляет", "🤖"),
+    GLUE("Суперклей", 1, "+1 гнездо для деталей на пушке", "🧴"),
     TOTEM("Тотем бессмертия", 2, "Воскрешает один раз", "🗿"),
     SUPERNOVA("Сверхновая", 2, "Каждые 12 попаданий — взрыв из 12 пуль", "✨"),
     BLOODLUST("Кровавая жажда", 2, "+100% крит-урон, криты лечат", "🦇"),
     CLOVER("Клевер", 2, "+1 карта при новом уровне, больше удачи", "🍀"),
     BEHEMOTH("Бегемот", 2, "Все пули взрываются", "💥"),
-    GLASS("Стеклянная пушка", 2, "+80% урон, но −30% ХП", "🔮");
+    GLASS("Стеклянная пушка", 2, "+80% урон, но −30% ХП", "🍷");
 }
 
 // ───────────────────────── Активное оборудование ─────────────────────────
@@ -264,14 +300,14 @@ enum class Hero(
     val title: String, val desc: String, val color: Int,
     val hp: Float, val speed: Float, val parts: List<String>, val equip: Equip
 ) {
-    GUNNER("Стрелок", "Короткий ствол, экспансивные патроны, граната", c(0xFFF2B33D), 100f, 150f,
-        listOf("b_short", "a_exp"), Equip.GRENADE),
+    GUNNER("Стрелок", "Подпиленный ствол и экспансивные пули, граната", c(0xFFF2B33D), 100f, 150f,
+        listOf("saw", "exp"), Equip.GRENADE),
     WITCH("Ведьмак", "Аметист и нить судьбы, купол", c(0xFFB46CFF), 80f, 155f,
-        listOf("c_amethyst", "t_fate"), Equip.DOME),
-    ZORG("Зорг", "Инопланетный излучатель, рывок", c(0xFF4DFFB0), 90f, 165f,
-        listOf("b_beam"), Equip.DASH),
+        listOf("amethyst", "fate"), Equip.DOME),
+    ZORG("Зорг", "Инопланетный фонарик-луч, рывок", c(0xFF4DFFB0), 90f, 165f,
+        listOf("torch"), Equip.DASH),
     IMP("Бес", "Адская пасть и кровавый рубин, чёрная дыра", c(0xFFFF5A4A), 115f, 145f,
-        listOf("b_maw", "c_ruby"), Equip.BLACKHOLE);
+        listOf("maw", "ruby"), Equip.BLACKHOLE);
 }
 
 // ───────────────────────── Враги ─────────────────────────
